@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: opsos-db
+    environment:
+      POSTGRES_DB: opsosdb
+      POSTGRES_USER: opsadmin
+      POSTGRES_PASSWORD: opspassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opsadmin -d opsosdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis (for BullMQ queues and caching)
+  redis:
+    image: redis:7-alpine
+    container_name: opsos-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Next.js Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: opsos-app
+    ports:
+      - "3000:3000"
+      - "3001:3001"
+    environment:
+      DATABASE_URL: "postgresql://opsadmin:opspassword@postgres:5432/opsosdb?schema=public"
+      REDIS_URL: "redis://redis:6379"
+      JWT_SECRET: "super-secret-jwt-key-change-in-production-32chars"
+      JWT_REFRESH_SECRET: "super-secret-refresh-key-change-in-production-32ch"
+      NEXT_PUBLIC_APP_URL: "http://localhost:3000"
+      NEXT_PUBLIC_SOCKET_URL: "http://localhost:3001"
+      NODE_ENV: "development"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+      - ./prisma:/app/prisma
+      - ./public:/app/public
+
+volumes:
+  pgdata:
+  redisdata:

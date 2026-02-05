@@ -1,0 +1,396 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── TENANT & AUTH ───────────────────────────────────────
+
+model Tenant {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String   @db.VarChar(255)
+  slug          String   @unique @db.VarChar(100)
+  settings      Json     @default("{}")
+  plan          String   @default("trial") @db.VarChar(50)
+  planExpiresAt DateTime? @map("plan_expires_at")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  users               User[]
+  stations            Station[]
+  menuItems           MenuItem[]
+  workflowTemplates   WorkflowTemplate[]
+  inventoryItems      InventoryItem[]
+  orders              Order[]
+  auditLogs           AuditLog[]
+  shifts              Shift[]
+
+  @@map("tenants")
+}
+
+enum UserRole {
+  owner
+  admin
+  manager
+  staff
+  delivery
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  email        String    @db.VarChar(255)
+  passwordHash String    @map("password_hash") @db.VarChar(255)
+  name         String    @db.VarChar(255)
+  role         UserRole
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  tenant              Tenant               @relation(fields: [tenantId], references: [id])
+  refreshTokens       RefreshToken[]
+  createdOrders       Order[]              @relation("OrderCreator")
+  completedTasks      TaskInstance[]       @relation("TaskCompleter")
+  assignedTasks       TaskInstance[]       @relation("TaskAssignee")
+  completedSubtasks   SubtaskInstance[]
+  deliveryAssignments DeliveryAssignment[]
+  shifts              Shift[]
+  auditLogs           AuditLog[]
+
+  @@unique([tenantId, email], name: "uq_users_tenant_email")
+  @@index([tenantId])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  token     String   @unique @db.VarChar(500)
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ─── STATIONS ────────────────────────────────────────────
+
+model Station {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  name         String   @db.VarChar(255)
+  capacity     Int      @default(1)
+  taskTypes    String[] @map("task_types")
+  isActive     Boolean  @default(true) @map("is_active")
+  displayOrder Int      @default(0) @map("display_order")
+  settings     Json     @default("{}")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  tenant         Tenant           @relation(fields: [tenantId], references: [id])
+  taskInstances  TaskInstance[]
+  shifts         Shift[]
+  taskDurations  TaskDuration[]
+
+  @@unique([tenantId, name], name: "uq_stations_tenant_name")
+  @@index([tenantId])
+  @@map("stations")
+}
+
+// ─── WORKFLOW TEMPLATES ──────────────────────────────────
+
+model WorkflowTemplate {
+  id                    String   @id @default(uuid()) @db.Uuid
+  tenantId              String   @map("tenant_id") @db.Uuid
+  name                  String   @db.VarChar(255)
+  category              String?  @db.VarChar(100)
+  definition            Json
+  estimatedTotalMinutes Decimal? @map("estimated_total_minutes") @db.Decimal(6, 1)
+  isActive              Boolean  @default(true) @map("is_active")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  menuItems     MenuItem[]
+  taskDurations TaskDuration[]
+
+  @@index([tenantId])
+  @@index([tenantId, category])
+  @@map("workflow_templates")
+}
+
+// ─── MENU & INVENTORY ────────────────────────────────────
+
+model MenuItem {
+  id                 String   @id @default(uuid()) @db.Uuid
+  tenantId           String   @map("tenant_id") @db.Uuid
+  name               String   @db.VarChar(255)
+  category           String?  @db.VarChar(100)
+  price              Decimal  @db.Decimal(10, 2)
+  workflowTemplateId String?  @map("workflow_template_id") @db.Uuid
+  isAvailable        Boolean  @default(true) @map("is_available")
+  displayOrder       Int      @default(0) @map("display_order")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  tenant           Tenant            @relation(fields: [tenantId], references: [id])
+  workflowTemplate WorkflowTemplate? @relation(fields: [workflowTemplateId], references: [id])
+  recipeIngredients RecipeIngredient[]
+  orderItems       OrderItem[]
+
+  @@index([tenantId])
+  @@index([tenantId, category])
+  @@map("menu_items")
+}
+
+model InventoryItem {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  name         String   @db.VarChar(255)
+  unit         String   @db.VarChar(50)
+  currentStock Decimal  @default(0) @map("current_stock") @db.Decimal(10, 3)
+  minStock     Decimal  @default(0) @map("min_stock") @db.Decimal(10, 3)
+  costPerUnit  Decimal? @map("cost_per_unit") @db.Decimal(10, 4)
+  supplier     String?  @db.VarChar(255)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  tenant             Tenant              @relation(fields: [tenantId], references: [id])
+  recipeIngredients  RecipeIngredient[]
+  inventoryMovements InventoryMovement[]
+
+  @@unique([tenantId, name], name: "uq_inventory_tenant_name")
+  @@index([tenantId])
+  @@map("inventory_items")
+}
+
+model RecipeIngredient {
+  id              String  @id @default(uuid()) @db.Uuid
+  menuItemId      String  @map("menu_item_id") @db.Uuid
+  inventoryItemId String  @map("inventory_item_id") @db.Uuid
+  tenantId        String  @map("tenant_id") @db.Uuid
+  quantity        Decimal @db.Decimal(10, 3)
+
+  menuItem      MenuItem      @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+
+  @@index([menuItemId])
+  @@map("recipe_ingredients")
+}
+
+model InventoryMovement {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  inventoryItemId String   @map("inventory_item_id") @db.Uuid
+  quantity        Decimal  @db.Decimal(10, 3) // positive=in, negative=out
+  movementType    String   @map("movement_type") @db.VarChar(50)
+  referenceId     String?  @map("reference_id") @db.Uuid
+  notes           String?
+  createdBy       String?  @map("created_by") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+
+  @@index([inventoryItemId, createdAt(sort: Desc)])
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@map("inventory_movements")
+}
+
+// ─── ORDERS ──────────────────────────────────────────────
+
+enum OrderChannel {
+  phone
+  in_store
+  online
+  import
+}
+
+model Order {
+  id               String       @id @default(uuid()) @db.Uuid
+  tenantId         String       @map("tenant_id") @db.Uuid
+  orderNumber      Int          @default(autoincrement()) @map("order_number")
+  channel          OrderChannel
+  status           String       @default("new") @db.VarChar(50)
+  customerName     String?      @map("customer_name") @db.VarChar(255)
+  customerPhone    String?      @map("customer_phone") @db.VarChar(50)
+  customerAddress  String?      @map("customer_address")
+  notes            String?
+  priority         Int          @default(0)
+  requestedAt      DateTime?    @map("requested_at")
+  estimatedReadyAt DateTime?    @map("estimated_ready_at")
+  actualReadyAt    DateTime?    @map("actual_ready_at")
+  totalAmount      Decimal?     @map("total_amount") @db.Decimal(10, 2)
+  createdById      String?      @map("created_by") @db.Uuid
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  tenant             Tenant              @relation(fields: [tenantId], references: [id])
+  createdBy          User?               @relation("OrderCreator", fields: [createdById], references: [id])
+  items              OrderItem[]
+  taskInstances      TaskInstance[]
+  deliveryAssignment DeliveryAssignment?
+
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@map("orders")
+}
+
+model OrderItem {
+  id            String  @id @default(uuid()) @db.Uuid
+  orderId       String  @map("order_id") @db.Uuid
+  menuItemId    String  @map("menu_item_id") @db.Uuid
+  tenantId      String  @map("tenant_id") @db.Uuid
+  quantity      Int     @default(1)
+  unitPrice     Decimal @map("unit_price") @db.Decimal(10, 2)
+  modifications String?
+  notes         String?
+  status        String  @default("pending") @db.VarChar(50)
+
+  order         Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem      MenuItem       @relation(fields: [menuItemId], references: [id])
+  taskInstances TaskInstance[]
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+// ─── TASK INSTANCES (Runtime Workflow) ───────────────────
+
+model TaskInstance {
+  id               String    @id @default(uuid()) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  orderId          String    @map("order_id") @db.Uuid
+  orderItemId      String    @map("order_item_id") @db.Uuid
+  taskDefId        String    @map("task_def_id") @db.VarChar(100)
+  phaseDefId       String    @map("phase_def_id") @db.VarChar(100)
+  name             String    @db.VarChar(255)
+  stationId        String?   @map("station_id") @db.Uuid
+  assignedToId     String?   @map("assigned_to") @db.Uuid
+  status           String    @default("pending") @db.VarChar(50)
+  dependsOn        String[]  @map("depends_on") @db.Uuid
+  estimatedMinutes Decimal?  @map("estimated_minutes") @db.Decimal(6, 1)
+  startedAt        DateTime? @map("started_at")
+  completedAt      DateTime? @map("completed_at")
+  completedById    String?   @map("completed_by") @db.Uuid
+  queuePosition    Int?      @map("queue_position")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  order       Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderItem   OrderItem        @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  station     Station?         @relation(fields: [stationId], references: [id])
+  assignedTo  User?            @relation("TaskAssignee", fields: [assignedToId], references: [id])
+  completedBy User?            @relation("TaskCompleter", fields: [completedById], references: [id])
+  subtasks    SubtaskInstance[]
+
+  @@index([tenantId, status])
+  @@index([stationId, status])
+  @@index([orderId])
+  @@index([orderItemId])
+  @@map("task_instances")
+}
+
+model SubtaskInstance {
+  id             String    @id @default(uuid()) @db.Uuid
+  taskInstanceId String    @map("task_instance_id") @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  subtaskDefId   String    @map("subtask_def_id") @db.VarChar(100)
+  name           String    @db.VarChar(255)
+  isCompleted    Boolean   @default(false) @map("is_completed")
+  completedAt    DateTime? @map("completed_at")
+  completedById  String?   @map("completed_by") @db.Uuid
+
+  taskInstance TaskInstance @relation(fields: [taskInstanceId], references: [id], onDelete: Cascade)
+  completedBy  User?       @relation(fields: [completedById], references: [id])
+
+  @@index([taskInstanceId])
+  @@map("subtask_instances")
+}
+
+// ─── DELIVERY ────────────────────────────────────────────
+
+model DeliveryAssignment {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  orderId     String    @unique @map("order_id") @db.Uuid
+  riderId     String?   @map("rider_id") @db.Uuid
+  status      String    @default("pending") @db.VarChar(50)
+  assignedAt  DateTime? @map("assigned_at")
+  pickedUpAt  DateTime? @map("picked_up_at")
+  deliveredAt DateTime? @map("delivered_at")
+  notes       String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  rider User? @relation(fields: [riderId], references: [id])
+
+  @@index([tenantId, status])
+  @@index([riderId, status])
+  @@map("delivery_assignments")
+}
+
+// ─── SHIFTS ──────────────────────────────────────────────
+
+model Shift {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  stationId String?  @map("station_id") @db.Uuid
+  startsAt  DateTime @map("starts_at")
+  endsAt    DateTime @map("ends_at")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id])
+  user    User     @relation(fields: [userId], references: [id])
+  station Station? @relation(fields: [stationId], references: [id])
+
+  @@index([tenantId, startsAt, endsAt])
+  @@index([userId, startsAt])
+  @@map("shifts")
+}
+
+// ─── ANALYTICS ───────────────────────────────────────────
+
+model TaskDuration {
+  id                 String   @id @default(uuid()) @db.Uuid
+  tenantId           String   @map("tenant_id") @db.Uuid
+  workflowTemplateId String   @map("workflow_template_id") @db.Uuid
+  taskDefId          String   @map("task_def_id") @db.VarChar(100)
+  stationId          String?  @map("station_id") @db.Uuid
+  durationSeconds    Int      @map("duration_seconds")
+  recordedAt         DateTime @default(now()) @map("recorded_at")
+
+  workflowTemplate WorkflowTemplate @relation(fields: [workflowTemplateId], references: [id])
+  station          Station?         @relation(fields: [stationId], references: [id])
+
+  @@index([tenantId, workflowTemplateId, taskDefId])
+  @@map("task_durations")
+}
+
+// ─── AUDIT ───────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  action     String   @db.VarChar(100)
+  entityType String?  @map("entity_type") @db.VarChar(100)
+  entityId   String?  @map("entity_id") @db.Uuid
+  details    Json?
+  ipAddress  String?  @map("ip_address") @db.VarChar(45)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User?  @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("audit_logs")
+}

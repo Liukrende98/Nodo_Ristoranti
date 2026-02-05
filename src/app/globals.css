@@ -1,0 +1,124 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --border: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --border: 217.2 32.6% 17.5%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-gray-200;
+  }
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-blue-600 text-white hover:bg-blue-700 focus-visible:ring-blue-600;
+  }
+  .btn-secondary {
+    @apply btn bg-gray-100 text-gray-900 hover:bg-gray-200 focus-visible:ring-gray-400;
+  }
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-600;
+  }
+  .btn-success {
+    @apply btn bg-emerald-600 text-white hover:bg-emerald-700 focus-visible:ring-emerald-600;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent hover:bg-gray-100;
+  }
+  .btn-lg {
+    @apply px-6 py-3 text-base;
+  }
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
+
+  .card {
+    @apply rounded-xl bg-white p-4 shadow-sm border border-gray-100;
+  }
+
+  .input {
+    @apply block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-gray-700 mb-1;
+  }
+
+  /* KDS specific styles */
+  .kds-card {
+    @apply rounded-xl p-4 shadow-md border-2 transition-all duration-300;
+  }
+  .kds-card-new {
+    @apply kds-card border-blue-400 bg-blue-50;
+  }
+  .kds-card-preparing {
+    @apply kds-card border-amber-400 bg-amber-50;
+  }
+  .kds-card-ready {
+    @apply kds-card border-emerald-400 bg-emerald-50;
+  }
+  .kds-card-late {
+    @apply kds-card border-red-500 bg-red-50 animate-flash;
+  }
+
+  .kds-task {
+    @apply flex items-center gap-2 rounded-lg p-2 text-sm cursor-pointer transition-all;
+  }
+  .kds-task-pending {
+    @apply kds-task bg-gray-100 text-gray-500;
+  }
+  .kds-task-queued {
+    @apply kds-task bg-blue-100 text-blue-800 hover:bg-blue-200;
+  }
+  .kds-task-in-progress {
+    @apply kds-task bg-amber-100 text-amber-800 animate-pulse-slow;
+  }
+  .kds-task-done {
+    @apply kds-task bg-emerald-100 text-emerald-800 line-through opacity-70;
+  }
+}
+
+/* Scrollbar styling for KDS */
+.kds-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.kds-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.kds-scroll::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+
+/* Touch-friendly tap targets */
+@media (pointer: coarse) {
+  .kds-task {
+    min-height: 48px;
+    padding: 12px;
+  }
+}
